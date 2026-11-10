@@ -1,7 +1,3 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./dark_mode.svg">
-  <source media="(prefers-color-scheme: light)" srcset="./light_mode.svg">
-  <img alt="Mohammed Sharjun — App Developer, Mobile and Web. Currently building a mobile learning app. Open to freelance projects." src="./light_mode.svg" width="1100">
-</picture>
+<img src="./readme-profile.svg" width="960" alt="Mohammed Sharjun — Mobile and Web Developer. I build mobile and web applications, connecting thoughtful interfaces with the data and services behind them. Stack: Flutter, React Native, React, Next.js, Firebase and Supabase. Currently building a mobile learning application with lessons, quizzes, audio and saved progress. Available for freelance mobile and web development.">
 
-<p align="center"><a href="https://github.com/mohammedsharjun?tab=repositories">Explore my repositories</a></p>
+[Explore my repositories](https://github.com/mohammedsharjun?tab=repositories)
