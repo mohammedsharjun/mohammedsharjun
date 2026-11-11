@@ -9,11 +9,12 @@ Currently building a mobile learning application with lessons, interactive quizz
 ## Technologies I work with
 
 <p align="center">
-  <img src="https://skillicons.dev/icons?i=dart,flutter,react,nextjs,firebase,supabase&theme=dark" alt="Dart, Flutter, React, Next.js, Firebase, and Supabase" height="48">
+  <img src="https://skillicons.dev/icons?i=dart,flutter,react,nextjs,html,css,python,firebase,supabase,azure&theme=dark" alt="Dart, Flutter, React, Next.js, HTML, CSS, Python, Firebase, Supabase, and Azure (used for Text to Speech)" height="48">
 </p>
 
 <p align="center">
-  Dart · Flutter · React Native · React · Next.js · Firebase · Supabase
+  Dart · Flutter · React Native · React · Next.js · HTML · CSS · Python<br>
+  Firebase · Supabase · Azure Text to Speech · Cloudinary
 </p>
 
 ## GitHub contributions & activity
