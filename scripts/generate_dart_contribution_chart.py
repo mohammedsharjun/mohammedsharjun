@@ -5,40 +5,44 @@ import argparse
 import datetime as dt
 import json
 import os
-import time
+import re
+import subprocess
 import urllib.parse
-import urllib.request
 from collections import Counter
 
 API = "https://api.github.com"
 AUTHOR = "mohammedsharjun"
 
 
-def api(path, token, attempts=5):
-    last_error = None
-    for attempt in range(1, attempts + 1):
-        request = urllib.request.Request(f"{API}{path}", headers={
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "profile-dart-chart",
-        })
-        try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                return json.load(response), response.headers
-        except Exception as error:
-            last_error = error
-            print(f"GitHub API request attempt {attempt} failed: {error}")
-            if attempt < attempts:
-                time.sleep(15)
-    raise SystemExit(f"GitHub API request failed after {attempts} attempts: {last_error}")
+def curl_api(url, token):
+    command = [
+        "curl", "-sS", "--fail", "--retry", "5", "--retry-delay", "15",
+        "--retry-all-errors", "--max-time", "60",
+        "-D", "-",
+        "-H", f"Authorization: Bearer {token}",
+        "-H", "Accept: application/vnd.github+json",
+        "-H", "User-Agent: profile-dart-chart",
+        url,
+    ]
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        raise SystemExit(f"GitHub API request failed: {result.stderr.strip() or result.stdout.strip()}")
 
+    raw = result.stdout
+    separator = raw.find("\r\n\r\n")
+    if separator == -1:
+        separator = raw.find("\n\n")
+        header_text, body = raw[:separator], raw[separator + 2:]
+    else:
+        header_text, body = raw[:separator], raw[separator + 4:]
 
-def next_link(headers):
-    link = headers.get("Link", "")
-    for part in link.split(","):
-        if 'rel="next"' in part:
-            return part[part.find("<") + 1:part.find(">")]
-    return None
+    link = None
+    for line in header_text.splitlines():
+        if line.lower().startswith("link:"):
+            match = re.search(r'<([^>]+)>;\s*rel="next"', line, re.IGNORECASE)
+            if match:
+                link = match.group(1)
+    return json.loads(body), link
 
 
 def commits(repo, start, token):
@@ -47,12 +51,12 @@ def commits(repo, start, token):
         "since": f"{start.isoformat()}T00:00:00Z",
         "per_page": "100",
     })
-    path = f"/repos/{repo}/commits?{query}"
-    while path:
-        data, headers = api(path, token)
+    url = f"{API}/repos/{repo}/commits?{query}"
+    while url:
+        data, next_url = curl_api(url, token)
         for commit in data:
             yield commit
-        path = next_link(headers)
+        url = next_url
 
 
 def repository_stats(repo, start, token):
@@ -64,7 +68,7 @@ def repository_stats(repo, start, token):
         sha = commit["sha"]
         date = dt.datetime.fromisoformat(commit["commit"]["committer"]["date"].replace("Z", "+00:00")).date()
         month = f"{date.year}-{date.month:02d}"
-        detail, _ = api(f"/repos/{repo}/commits/{sha}", token)
+        detail, _ = curl_api(f"{API}/repos/{repo}/commits/{sha}", token)
         is_dart = any(file["filename"].endswith(".dart") for file in detail.get("files", []))
         if is_dart:
             dart += 1
