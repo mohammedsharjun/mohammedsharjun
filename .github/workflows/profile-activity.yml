@@ -1,0 +1,122 @@
+name: Update profile charts
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '45 3 * * *'
+permissions:
+  contents: write
+concurrency:
+  group: profile-charts
+  cancel-in-progress: false
+jobs:
+  charts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate authenticated charts
+        env:
+          GH_TOKEN: ${{ secrets.PRIVATE_REPO_READ_TOKEN }}
+        shell: python
+        run: |
+          import collections, datetime as dt, html, json, pathlib, re, subprocess
+          def api(args):
+              result = subprocess.run(['gh','api'] + args, capture_output=True, text=True, timeout=180)
+              if result.returncode:
+                  raise SystemExit('GitHub API request failed. Check token approval, expiry and selected repositories. Existing charts preserved.')
+              value = json.loads(result.stdout)
+              if isinstance(value, dict) and value.get('errors'):
+                  raise SystemExit('GitHub calendar query failed; existing charts preserved.')
+              return value
+          if not __import__('os').environ.get('GH_TOKEN'):
+              raise SystemExit('PRIVATE_REPO_READ_TOKEN is missing.')
+          start = dt.date(2025,9,1)
+          end = dt.datetime.now(dt.timezone.utc).date()
+          days = {}
+          query = 'query($from:DateTime!,$to:DateTime!){user(login:"mohammedsharjun"){contributionsCollection(from:$from,to:$to){contributionCalendar{weeks{contributionDays{date contributionCount}}}}}}'
+          for year in range(start.year,end.year+1):
+              first,last = max(start,dt.date(year,1,1)),min(end,dt.date(year,12,31))
+              data = api(['graphql','-f','query='+query,'-f','from='+first.isoformat()+'T00:00:00Z','-f','to='+last.isoformat()+'T23:59:59Z'])
+              weeks = data['data']['user']['contributionsCollection']['contributionCalendar']['weeks']
+              for week in weeks:
+                  for day in week['contributionDays']:
+                      date = dt.date.fromisoformat(day['date'])
+                      if start <= date <= end:
+                          days[date] = day['contributionCount']
+          if len(days) != (end-start).days+1:
+              raise SystemExit('Incomplete contribution calendar; existing charts preserved.')
+          months = collections.Counter()
+          for date,count in sorted(days.items()):
+              months[date.strftime('%Y-%m')] += count
+          def base(title,height):
+              return [f'<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="{height}" viewBox="0 0 1100 {height}" role="img"><title>{html.escape(title)}</title><rect width="1100" height="{height}" rx="16" fill="#0d1117"/><g font-family="Arial,sans-serif" fill="#a5b7d0">',f'<text x="40" y="42" fill="#8bbcff" font-size="23">{html.escape(title)}</text>']
+          graph = base('GitHub contributions & activity',370)
+          graph.append(f'<text x="40" y="70" font-size="14">2025-09-01 through {end} (UTC) | {sum(days.values())} contributions</text>')
+          maximum = max(months.values(),default=0) or 1
+          step = 1000/len(months)
+          for i,(month,count) in enumerate(sorted(months.items())):
+              x,h = 50+i*step,count/maximum*175
+              if count:
+                  graph.append(f'<rect x="{x:.1f}" y="{285-h:.1f}" width="{step*.6:.1f}" height="{h:.1f}" rx="4" fill="#388bfd"/>')
+              graph.append(f'<text x="{x:.1f}" y="{275-h:.1f}" font-size="12">{count}</text><text x="{x:.1f}" y="310" font-size="11">{month[2:]}</text>')
+          graph.append('<text x="40" y="347" font-size="12">Authenticated GitHub calendar totals. Includes private activity available to this token and your visibility settings.</text></g></svg>')
+          repos = []
+          page = 1
+          while True:
+              batch = api([f'/users/mohammedsharjun/repos?type=owner&per_page=100&page={page}'])
+              repos.extend(r['full_name'] for r in batch if not r['fork'])
+              if len(batch)<100:
+                  break
+              page += 1
+          repos = sorted(set(repos + ['Deeniac/Mumin','Deeniac/components_library']))
+          languages = collections.Counter()
+          for repo in repos:
+              languages.update(api([f'/repos/{repo}/languages']))
+          if not languages:
+              raise SystemExit('No language data returned; existing charts preserved.')
+          rows = languages.most_common()
+          height = 130+len(rows)*38
+          chart = base('Repository language composition',height)
+          chart.append(f'<text x="40" y="72" font-size="14">Current snapshot | Public non-fork repositories + selected private repositories | Updated {end}</text>')
+          total = sum(languages.values())
+          for i,(name,count) in enumerate(rows):
+              y = 110+i*38
+              percent = count/total*100
+              chart.append(f'<text x="40" y="{y}" font-size="14">{html.escape(name)}</text><rect x="220" y="{y-13}" width="{max(0.5,percent*7):.1f}" height="18" rx="4" fill="#388bfd"/><text x="950" y="{y}" font-size="13">{percent:.1f}%</text>')
+          chart.append('</g></svg>')
+          readme = pathlib.Path('README.md')
+          text = readme.read_text()
+          if '## GitHub contributions & activity' not in text or '## Currently building' not in text:
+              raise SystemExit('README section markers missing; no changes published.')
+          section = '''## GitHub contributions & activity
+
+          <img src="./assets/profile-activity.svg" width="100%" alt="Authenticated GitHub contribution calendar, September 2025 through the current date">
+
+          Calendar totals include private activity available to the authenticated account and its visibility settings. This date range differs from the rolling last-year calendar on GitHub. Private commit counts are not added again to these totals.
+
+          ## Languages across my repositories
+
+          <img src="./assets/profile-languages.svg" width="100%" alt="Current language composition across public non-fork and selected private repositories">
+
+          Current repository language composition, measured by code bytes—not proficiency, personal authorship, or language-specific contribution totals for the date range. Private repository names and code are not published in the chart.
+
+          <img src="./assets/dart-contribution.svg" width="100%" alt="Dart-related commit activity from September 2025 across selected private repositories">
+
+          Dart activity counts authored commits touching Dart files in the selected repositories' default-branch histories. It is a separate measure, not an additional GitHub contribution total.
+
+          '''
+          text = re.sub(r'## GitHub contributions & activity\n.*?(?=## Currently building)',lambda m:section,text,flags=re.S)
+          text = text.replace('Charts are generated by third-party services from available GitHub data. Coverage, caching, and availability vary; private work may not be represented.','Charts are generated in this repository from GitHub API data. Coverage depends on token access, repository history, visibility settings and the measure described above.')
+          pathlib.Path('assets').mkdir(exist_ok=True)
+          pathlib.Path('assets/profile-activity.svg').write_text(''.join(graph))
+          pathlib.Path('assets/profile-languages.svg').write_text(''.join(chart))
+          readme.write_text(text)
+      - name: Publish generated charts
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md assets/profile-activity.svg assets/profile-languages.svg
+          if ! git diff --cached --quiet; then
+            git commit -m 'Update authenticated profile charts'
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
