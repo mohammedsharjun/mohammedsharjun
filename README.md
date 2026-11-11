@@ -8,20 +8,13 @@ Currently building a mobile learning application with lessons, interactive quizz
 
 ## Technologies I work with
 
-### Mobile
-<img src="https://skillicons.dev/icons?i=dart,flutter,react&theme=dark" alt="Dart, Flutter, and React Native" height="48">
+<p align="center">
+  <img src="https://skillicons.dev/icons?i=dart,flutter,react,nextjs,firebase,supabase&theme=dark" alt="Dart, Flutter, React, Next.js, Firebase, and Supabase" height="48">
+</p>
 
-Dart · Flutter · React Native
-
-### Web
-<img src="https://skillicons.dev/icons?i=react,nextjs&theme=dark" alt="React and Next.js" height="48">
-
-React · Next.js
-
-### Backend integration
-<img src="https://skillicons.dev/icons?i=firebase,supabase&theme=dark" alt="Firebase and Supabase" height="48">
-
-Firebase · Supabase
+<p align="center">
+  Dart · Flutter · React Native · React · Next.js · Firebase · Supabase
+</p>
 
 ## GitHub contributions & activity
 
