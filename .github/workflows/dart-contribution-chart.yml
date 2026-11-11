@@ -16,6 +16,19 @@ jobs:
         with:
           token: ${{ secrets.PRIVATE_REPO_READ_TOKEN }}
 
+      - name: Check GitHub API connectivity
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if curl -fsSI --max-time 20 https://api.github.com/; then
+              echo "GitHub API is reachable"
+              exit 0
+            fi
+            echo "GitHub API connection attempt $attempt failed; retrying in 15 seconds"
+            sleep 15
+          done
+          echo "GitHub API is not reachable from this runner"
+          exit 1
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'

@@ -5,6 +5,7 @@ import argparse
 import datetime as dt
 import json
 import os
+import time
 import urllib.parse
 import urllib.request
 from collections import Counter
@@ -13,14 +14,23 @@ API = "https://api.github.com"
 AUTHOR = "mohammedsharjun"
 
 
-def api(path, token):
-    request = urllib.request.Request(f"{API}{path}", headers={
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-        "User-Agent": "profile-dart-chart",
-    })
-    with urllib.request.urlopen(request) as response:
-        return json.load(response), response.headers
+def api(path, token, attempts=5):
+    last_error = None
+    for attempt in range(1, attempts + 1):
+        request = urllib.request.Request(f"{API}{path}", headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "profile-dart-chart",
+        })
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return json.load(response), response.headers
+        except Exception as error:
+            last_error = error
+            print(f"GitHub API request attempt {attempt} failed: {error}")
+            if attempt < attempts:
+                time.sleep(15)
+    raise SystemExit(f"GitHub API request failed after {attempts} attempts: {last_error}")
 
 
 def next_link(headers):
