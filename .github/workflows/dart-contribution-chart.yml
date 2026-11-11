@@ -1,0 +1,38 @@
+name: Generate Dart contribution chart
+
+on:
+  schedule:
+    - cron: '30 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate-chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PRIVATE_REPO_READ_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Generate aggregate Dart contribution chart
+        env:
+          PRIVATE_REPO_READ_TOKEN: ${{ secrets.PRIVATE_REPO_READ_TOKEN }}
+        run: |
+          python scripts/generate_dart_contribution_chart.py \
+            --output assets/dart-contribution.svg \
+            --start-date 2025-09-01 \
+            --repos Deeniac/Mumin Deeniac/components_library
+
+      - name: Commit generated chart
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/dart-contribution.svg
+          git diff --cached --quiet || git commit -m "Update Dart contribution chart"
+          git push
