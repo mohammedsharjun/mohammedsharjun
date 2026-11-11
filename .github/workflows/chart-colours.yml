@@ -1,0 +1,85 @@
+name: Apply chart colours
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/chart-colours.yml']
+  workflow_dispatch:
+  workflow_run:
+    workflows: ['Update profile charts', 'Generate Dart contribution chart']
+    types: [completed]
+permissions:
+  contents: write
+concurrency:
+  group: chart-colours
+  cancel-in-progress: false
+jobs:
+  colours:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Update technology section and chart palette
+        shell: python
+        run: |
+          import datetime as dt, pathlib, re, xml.etree.ElementTree as ET
+          ns = 'http://www.w3.org/2000/svg'
+          ET.register_namespace('', ns)
+          tag = lambda name: '{'+ns+'}'+name
+          palette = {'Dart':'#38BDF8','TypeScript':'#60A5FA','JavaScript':'#F2D76B','Python':'#D6B86A','HTML':'#F28B74','CSS':'#B79AF5','Kotlin':'#CF9BEF','C++':'#89A7D6','CMake':'#90B7AC','PLpgSQL':'#83B7C9','SCSS':'#D799C1','Swift':'#EFA875','C':'#A6B4C5','Shell':'#A4C78F','PowerShell':'#91A9E6','Objective-C':'#A0B6CD','Java':'#D7A382'}
+          current = dt.datetime.now(dt.timezone.utc).strftime('%Y-%m')
+          for filename,base,light in [('profile-activity.svg','#388BFD','#8BBCFF'),('dart-contribution.svg','#38BDF8','#A5F3FC'),('profile-languages.svg',None,None)]:
+              path = pathlib.Path('assets') / filename
+              if not path.exists():
+                  raise SystemExit('Expected chart missing; no files committed.')
+              root = ET.fromstring(path.read_text())
+              texts = list(root.iter(tag('text')))
+              if filename == 'profile-languages.svg':
+                  labels = {round(float(t.get('y','0'))-13,1):(t.text or '') for t in texts if t.get('x') == '40' and float(t.get('y','0')) >= 110}
+                  for rect in root.iter(tag('rect')):
+                      if rect.get('x') == '220' and rect.get('height') == '18':
+                          name = labels.get(round(float(rect.get('y','0')),1),'')
+                          rect.set('fill',palette.get(name,'#94A3B8'))
+              else:
+                  bars = [r for r in root.iter(tag('rect')) if r.get('rx') in ('4','5')]
+                  for rect in bars:
+                      rect.set('fill',base)
+                  labels = [t for t in texts if float(t.get('y','0')) in (310,325)]
+                  if labels:
+                      last = max(labels,key=lambda t:float(t.get('x','0')))
+                      if (last.text or '').strip() in (current,current[2:],current[5:]):
+                          target = float(last.get('x','0'))
+                          for rect in bars:
+                              x,w = float(rect.get('x','0')),float(rect.get('width','0'))
+                              if x-1 <= target <= x+w+1:
+                                  rect.set('fill',light)
+              path.write_text(ET.tostring(root,encoding='unicode'))
+          path = pathlib.Path('README.md')
+          text = path.read_text()
+          section = '''## Technologies I work with
+
+          <p align="center">
+            <img src="https://skillicons.dev/icons?i=dart,flutter,react,nextjs,html,css,python,firebase,supabase,azure&theme=dark" alt="Dart, Flutter, React, Next.js, HTML, CSS, Python, Firebase, Supabase, and Azure (used for Text to Speech)" height="48">
+          </p>
+
+          <p align="center">
+            Dart · Flutter · React Native · React · Next.js · HTML · CSS · Python<br>
+            Firebase · Supabase · Azure Text to Speech · Cloudinary
+          </p>
+
+          '''
+          text,count = re.subn(r'## Technologies I work with\n.*?(?=## GitHub contributions & activity)',lambda m:section,text,flags=re.S)
+          if count != 1:
+              raise SystemExit('Technology section markers missing; no files committed.')
+          path.write_text(text)
+      - name: Publish styling
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md assets/profile-activity.svg assets/profile-languages.svg assets/dart-contribution.svg
+          if ! git diff --cached --quiet; then
+            git commit -m 'Update technology stack and chart palette'
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
