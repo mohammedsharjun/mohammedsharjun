@@ -5,77 +5,60 @@ import argparse
 import datetime as dt
 import json
 import os
+import urllib.parse
 import urllib.request
 from collections import Counter
 
-API = "https://api.github.com/graphql"
+API = "https://api.github.com"
 AUTHOR = "mohammedsharjun"
 
-QUERY = """
-query($owner: String!, $name: String!, $since: DateTime!, $after: String) {
-  repository(owner: $owner, name: $name) {
-    defaultBranchRef {
-      target {
-        ... on Commit {
-          history(first: 100, since: $since, author: {login: $author}, after: $after) {
-            pageInfo { hasNextPage endCursor }
-            totalCount
-            nodes {
-              committedDate
-              files(first: 100) {
-                pageInfo { hasNextPage }
-                nodes { path }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
-"""
 
-
-def graphql(query, variables, token):
-    payload = json.dumps({"query": query, "variables": variables}).encode()
-    request = urllib.request.Request(API, data=payload, headers={
+def api(path, token):
+    request = urllib.request.Request(f"{API}{path}", headers={
         "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
+        "Accept": "application/vnd.github+json",
         "User-Agent": "profile-dart-chart",
     })
     with urllib.request.urlopen(request) as response:
-        result = json.load(response)
-    if result.get("errors"):
-        raise SystemExit(f"GitHub GraphQL error: {result['errors']}")
-    return result["data"]
+        return json.load(response), response.headers
+
+
+def next_link(headers):
+    link = headers.get("Link", "")
+    for part in link.split(","):
+        if 'rel="next"' in part:
+            return part[part.find("<") + 1:part.find(">")]
+    return None
+
+
+def commits(repo, start, token):
+    query = urllib.parse.urlencode({
+        "author": AUTHOR,
+        "since": f"{start.isoformat()}T00:00:00Z",
+        "per_page": "100",
+    })
+    path = f"/repos/{repo}/commits?{query}"
+    while path:
+        data, headers = api(path, token)
+        for commit in data:
+            yield commit
+        path = next_link(headers)
 
 
 def repository_stats(repo, start, token):
-    owner, name = repo.split("/", 1)
-    cursor = None
     total = 0
     dart = 0
     months = Counter()
-    while True:
-        data = graphql(QUERY, {
-            "owner": owner,
-            "name": name,
-            "since": f"{start.isoformat()}T00:00:00Z",
-            "after": cursor,
-            "author": AUTHOR,
-        }, token)
-        history = data["repository"]["defaultBranchRef"]["target"]["history"]
-        total += len(history["nodes"])
-        for commit in history["nodes"]:
-            date = dt.datetime.fromisoformat(commit["committedDate"].replace("Z", "+00:00")).date()
-            month = f"{date.year}-{date.month:02d}"
-            is_dart = any(node["path"].endswith(".dart") for node in commit["files"]["nodes"])
-            if is_dart:
-                dart += 1
-                months[month] += 1
-        if not history["pageInfo"]["hasNextPage"]:
-            break
-        cursor = history["pageInfo"]["endCursor"]
+    for commit in commits(repo, start, token):
+        total += 1
+        sha = commit["sha"]
+        date = dt.datetime.fromisoformat(commit["commit"]["committer"]["date"].replace("Z", "+00:00")).date()
+        month = f"{date.year}-{date.month:02d}"
+        detail, _ = api(f"/repos/{repo}/commits/{sha}", token)
+        is_dart = any(file["filename"].endswith(".dart") for file in detail.get("files", []))
+        if is_dart:
+            dart += 1
+            months[month] += 1
     return total, dart, months
 
 
